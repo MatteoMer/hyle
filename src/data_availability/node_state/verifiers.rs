@@ -1,10 +1,13 @@
+use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
 use rand::Rng;
+use reclaim_rust_sdk::verify_proof as reclaim_verify_proof;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 use risc0_zkvm::sha::Digest;
+use serde::{Deserialize, Serialize};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
@@ -45,6 +48,7 @@ pub fn verify_proof(
         }
         "noir" => noir_proof_verifier(proof, &program_id.0),
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
+        "reclaim" => reclaim_proof_verifier(proof, &program_id.0),
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
@@ -219,6 +223,101 @@ pub fn sp1_proof_verifier(
     Ok(vec![hyle_output])
 }
 
+/*
+ *
+ * {
+    "identifier": "0x4781e38d9b098eca396249fd266a49f53ed80d1790e5958829cbd90376152571",
+    "claimData": {
+        "provider": "http",
+        "parameters": "{"additionalClientOptions":{},"body":"","geoLocation":"","headers":{"Referer":"https://x.com/home","Sec-Fetch-Mode":"same-origin","User-Agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari/604.1"},"method":"GET","paramValues":{"URL_PARAMS_1":"GBSfDNBdZPRdJCfYd3mR7Q","URL_PARAMS_2":"%7B%22focalTweetId%22%3A%221798810213522550947%22%2C%22referrer%22%3A%22me%22%2C%22with_rux_injections%22%3Afalse%2C%22rankingMode%22%3A%22Relevance%22%2C%22includePromotedContent%22%3Atrue%2C%22withCommunity%22%3Atrue%2C%22withQuickPromoteEligibilityTweetFields%22%3Atrue%2C%22withBirdwatchNotes%22%3Atrue%2C%22withVoice%22%3Atrue%7D","URL_PARAMS_3":"%7B%22profile_label_improvements_pcf_label_in_post_enabled%22%3Afalse%2C%22rweb_tipjar_consumption_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22communities_web_enable_tweet_community_results_fetch%22%3Atrue%2C%22c9s_tweet_anatomy_moderator_badge_enabled%22%3Atrue%2C%22articles_preview_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Atrue%2C%22tweet_awards_web_tipping_enabled%22%3Afalse%2C%22creator_subscriptions_quote_tweet_preview_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22rweb_video_timestamps_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Atrue%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D","URL_PARAMS_GRD":"%7B%22withArticleRichContentState%22%3Atrue%2C%22withArticlePlainText%22%3Afalse%2C%22withGrokAnalyze%22%3Afalse%2C%22withDisallowedReplyControls%22%3Afalse%7D","created_at":"Thu Jun 06 20:12:29 +0000 2024","full_text":"Breaking down the sum-check protocol\\n\\nFew months ago I did this implementation of the sum-check protocol in Rust, and wanted to make an article about it!\\n\\nToday is the day, I finally took time to write an introduction to the sum-check protocol! \\uD83E\\uDEE1\\n\\nhttps://t.co/Hlul7kWcCU","screen_name":"Matteo_Mer"},"responseMatches":[{"invert":false,"type":"contains","value":"\"full_text\":\"{{full_text}}\""},{"invert":false,"type":"contains","value":"\"created_at\":\"{{created_at}}\""},{"invert":false,"type":"contains","value":"\"screen_name\":\"{{screen_name}}\""}],"responseRedactions":[{"jsonPath":"$.data.threaded_conversation_with_injections_v2.instructions[0].entries[0].content.itemContent.tweet_results.result.legacy.full_text","regex":"\"full_text\":\"(.*)\"","xPath":""},{"jsonPath":"$.data.threaded_conversation_with_injections_v2.instructions[0].entries[0].content.itemContent.tweet_results.result.legacy.created_at","regex":"\"created_at\":\"(.*)\"","xPath":""},{"jsonPath":"$.data.threaded_conversation_with_injections_v2.instructions[0].entries[0].content.itemContent.tweet_results.result.core.user_results.result.legacy.screen_name","regex":"\"screen_name\":\"(.*)\"","xPath":""}],"url":"https://x.com/i/api/graphql/{{URL_PARAMS_1}}/TweetDetail?variables={{URL_PARAMS_2}}&features={{URL_PARAMS_3}}&fieldToggles={{URL_PARAMS_GRD}}"}",
+        "owner": "0xa48adccc20b2e8c0c086509dfdce644de0f1956f",
+        "timestampS": 1733116925,
+        "context": "{"contextAddress":"0x0","contextMessage":"sample context","extractedParameters":{"URL_PARAMS_1":"GBSfDNBdZPRdJCfYd3mR7Q","URL_PARAMS_2":"%7B%22focalTweetId%22%3A%221798810213522550947%22%2C%22referrer%22%3A%22me%22%2C%22with_rux_injections%22%3Afalse%2C%22rankingMode%22%3A%22Relevance%22%2C%22includePromotedContent%22%3Atrue%2C%22withCommunity%22%3Atrue%2C%22withQuickPromoteEligibilityTweetFields%22%3Atrue%2C%22withBirdwatchNotes%22%3Atrue%2C%22withVoice%22%3Atrue%7D","URL_PARAMS_3":"%7B%22profile_label_improvements_pcf_label_in_post_enabled%22%3Afalse%2C%22rweb_tipjar_consumption_enabled%22%3Atrue%2C%22responsive_web_graphql_exclude_directive_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22communities_web_enable_tweet_community_results_fetch%22%3Atrue%2C%22c9s_tweet_anatomy_moderator_badge_enabled%22%3Atrue%2C%22articles_preview_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Atrue%2C%22tweet_awards_web_tipping_enabled%22%3Afalse%2C%22creator_subscriptions_quote_tweet_preview_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22rweb_video_timestamps_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Atrue%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D","URL_PARAMS_GRD":"%7B%22withArticleRichContentState%22%3Atrue%2C%22withArticlePlainText%22%3Afalse%2C%22withGrokAnalyze%22%3Afalse%2C%22withDisallowedReplyControls%22%3Afalse%7D","created_at":"Thu Jun 06 20:12:29 +0000 2024","full_text":"Breaking down the sum-check protocol\\n\\nFew months ago I did this implementation of the sum-check protocol in Rust, and wanted to make an article about it!\\n\\nToday is the day, I finally took time to write an introduction to the sum-check protocol! \\uD83E\\uDEE1\\n\\nhttps://t.co/Hlul7kWcCU","screen_name":"Matteo_Mer"},"providerHash":"0x2d4c77912c40a3860f78ac71e81417cd666c08ebe678decf36012ef7fa8b83de"}",
+        "identifier": "0x4781e38d9b098eca396249fd266a49f53ed80d1790e5958829cbd90376152571",
+        "epoch": 1
+    },
+    "signatures": [
+        "0x67dbe84c52da77142d3aebfa571c0ca27a96b0c3ac2542c04b06fb10e0097dc22a80cc17c10d736f6779fba273b5c7c76415081382e814e445188e946083ae111c"
+    ],
+    "witnesses": [
+        {
+            "id": "0x244897572368eadf65bfbc5aec98d8e5443a9072",
+            "url": "wss://witness.reclaimprotocol.org/ws"
+        }
+    ],
+    "publicData": {
+    }
+}
+*/
+
+#[derive(Serialize, Deserialize, Debug)]
+struct ReclaimContext {
+    #[serde(rename = "contextAddress")]
+    context_address: String,
+    #[serde(rename = "contextMessage")]
+    context_message: String,
+    #[serde(rename = "extractedParameters")]
+    extracted_parameters: BTreeMap<String, String>,
+    #[serde(rename = "providerHash")]
+    provider_hash: String,
+}
+
+pub fn reclaim_proof_verifier(
+    proof_bin: &[u8],
+    verification_key: &[u8],
+) -> Result<Vec<HyleOutput>, Error> {
+    // 0x0a is \n, we remove a possible trailing \n
+    let verification_key = if verification_key.ends_with(&[0x0a]) {
+        &verification_key[..verification_key.len() - 1]
+    } else {
+        verification_key
+    };
+    let proof_str = String::from_utf8(proof_bin.into()).expect("Invalid UTF-8");
+
+    let proof: reclaim_rust_sdk::Proof =
+        serde_json::from_str(&proof_str).context("couldnt parse reclaim proof")?;
+
+    let context: ReclaimContext = serde_json::from_str(&proof.claim_data.context)
+        .context("could not deserialize context in reclaim proof")?;
+
+    let reclaim_blob = hyle_contract_sdk::Blob {
+        contract_name: "test_contract".into(),
+        data: hyle_contract_sdk::BlobData(
+            bincode::encode_to_vec(&context.extracted_parameters, bincode::config::standard())
+                .context("Couldn't encode reclaim blob")?,
+        ),
+    };
+
+    if verification_key != context.provider_hash.as_bytes() {
+        return Err(Error::msg("Verification key does not match provider hash"));
+    }
+
+    // Verify the proof.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let result = rt
+        .block_on(reclaim_verify_proof(&proof))
+        .context("could not verify reclaim proof")?;
+
+    tracing::info!("✅ Reclaim proof verified.",);
+
+    // TODO: change with reclaim context
+    Ok(vec![HyleOutput {
+        version: 1,
+        initial_state: hyle_contract_sdk::StateDigest(vec![0, 0, 0, 0]),
+        next_state: hyle_contract_sdk::StateDigest(vec![0, 0, 0, 0]),
+        identity: hyle_contract_sdk::Identity("test.identity".to_owned()),
+        tx_hash: hyle_contract_sdk::TxHash("".to_owned()),
+        index: hyle_contract_sdk::BlobIndex(0),
+        blobs: bincode::encode_to_vec(reclaim_blob, bincode::config::standard())
+            .context("could not convert blob to bytes")?,
+        success: result,
+        program_outputs: vec![],
+    }])
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs::File, io::Read};
@@ -227,7 +326,7 @@ mod tests {
         StateDigest, {BlobIndex, HyleOutput, Identity, TxHash},
     };
 
-    use super::noir_proof_verifier;
+    use super::{noir_proof_verifier, reclaim_proof_verifier};
 
     fn load_file_as_bytes(path: &str) -> Vec<u8> {
         let mut file = File::open(path).expect("Failed to open file");
@@ -300,6 +399,191 @@ mod tests {
                 );
             }
             Err(e) => panic!("Noir verification failed: {:?}", e),
+        }
+    }
+
+    #[ignore = "manual test"]
+    #[test_log::test]
+    fn test_reclaim_proof_verifier() {
+        let noir_proof = load_file_as_bytes("./tests/proofs/default.reclaim.proof");
+        let image_id = load_file_as_bytes("./tests/proofs/default.reclaim.vk");
+
+        let result = reclaim_proof_verifier(&noir_proof, &image_id);
+        match result {
+            Ok(outputs) => {
+                assert_eq!(
+                    outputs,
+                    vec![HyleOutput {
+                        version: 1,
+                        initial_state: hyle_contract_sdk::StateDigest(vec![0, 0, 0, 0]),
+                        next_state: hyle_contract_sdk::StateDigest(vec![0, 0, 0, 0]),
+                        identity: "test.identity".into(),
+                        tx_hash: "".into(),
+                        index: BlobIndex(0),
+                        blobs: [
+                            13, 116, 101, 115, 116, 95, 99, 111, 110, 116, 114, 97, 99, 116, 251,
+                            62, 9, 7, 12, 85, 82, 76, 95, 80, 65, 82, 65, 77, 83, 95, 49, 22, 71,
+                            66, 83, 102, 68, 78, 66, 100, 90, 80, 82, 100, 74, 67, 102, 89, 100,
+                            51, 109, 82, 55, 81, 12, 85, 82, 76, 95, 80, 65, 82, 65, 77, 83, 95,
+                            50, 251, 78, 1, 37, 55, 66, 37, 50, 50, 102, 111, 99, 97, 108, 84, 119,
+                            101, 101, 116, 73, 100, 37, 50, 50, 37, 51, 65, 37, 50, 50, 49, 55, 57,
+                            56, 56, 49, 48, 50, 49, 51, 53, 50, 50, 53, 53, 48, 57, 52, 55, 37, 50,
+                            50, 37, 50, 67, 37, 50, 50, 114, 101, 102, 101, 114, 114, 101, 114, 37,
+                            50, 50, 37, 51, 65, 37, 50, 50, 109, 101, 37, 50, 50, 37, 50, 67, 37,
+                            50, 50, 119, 105, 116, 104, 95, 114, 117, 120, 95, 105, 110, 106, 101,
+                            99, 116, 105, 111, 110, 115, 37, 50, 50, 37, 51, 65, 102, 97, 108, 115,
+                            101, 37, 50, 67, 37, 50, 50, 114, 97, 110, 107, 105, 110, 103, 77, 111,
+                            100, 101, 37, 50, 50, 37, 51, 65, 37, 50, 50, 82, 101, 108, 101, 118,
+                            97, 110, 99, 101, 37, 50, 50, 37, 50, 67, 37, 50, 50, 105, 110, 99,
+                            108, 117, 100, 101, 80, 114, 111, 109, 111, 116, 101, 100, 67, 111,
+                            110, 116, 101, 110, 116, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101,
+                            37, 50, 67, 37, 50, 50, 119, 105, 116, 104, 67, 111, 109, 109, 117,
+                            110, 105, 116, 121, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50,
+                            67, 37, 50, 50, 119, 105, 116, 104, 81, 117, 105, 99, 107, 80, 114,
+                            111, 109, 111, 116, 101, 69, 108, 105, 103, 105, 98, 105, 108, 105,
+                            116, 121, 84, 119, 101, 101, 116, 70, 105, 101, 108, 100, 115, 37, 50,
+                            50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 119, 105,
+                            116, 104, 66, 105, 114, 100, 119, 97, 116, 99, 104, 78, 111, 116, 101,
+                            115, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50,
+                            50, 119, 105, 116, 104, 86, 111, 105, 99, 101, 37, 50, 50, 37, 51, 65,
+                            116, 114, 117, 101, 37, 55, 68, 12, 85, 82, 76, 95, 80, 65, 82, 65, 77,
+                            83, 95, 51, 251, 142, 5, 37, 55, 66, 37, 50, 50, 112, 114, 111, 102,
+                            105, 108, 101, 95, 108, 97, 98, 101, 108, 95, 105, 109, 112, 114, 111,
+                            118, 101, 109, 101, 110, 116, 115, 95, 112, 99, 102, 95, 108, 97, 98,
+                            101, 108, 95, 105, 110, 95, 112, 111, 115, 116, 95, 101, 110, 97, 98,
+                            108, 101, 100, 37, 50, 50, 37, 51, 65, 102, 97, 108, 115, 101, 37, 50,
+                            67, 37, 50, 50, 114, 119, 101, 98, 95, 116, 105, 112, 106, 97, 114, 95,
+                            99, 111, 110, 115, 117, 109, 112, 116, 105, 111, 110, 95, 101, 110, 97,
+                            98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50,
+                            67, 37, 50, 50, 114, 101, 115, 112, 111, 110, 115, 105, 118, 101, 95,
+                            119, 101, 98, 95, 103, 114, 97, 112, 104, 113, 108, 95, 101, 120, 99,
+                            108, 117, 100, 101, 95, 100, 105, 114, 101, 99, 116, 105, 118, 101, 95,
+                            101, 110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117,
+                            101, 37, 50, 67, 37, 50, 50, 118, 101, 114, 105, 102, 105, 101, 100,
+                            95, 112, 104, 111, 110, 101, 95, 108, 97, 98, 101, 108, 95, 101, 110,
+                            97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 102, 97, 108, 115, 101,
+                            37, 50, 67, 37, 50, 50, 99, 114, 101, 97, 116, 111, 114, 95, 115, 117,
+                            98, 115, 99, 114, 105, 112, 116, 105, 111, 110, 115, 95, 116, 119, 101,
+                            101, 116, 95, 112, 114, 101, 118, 105, 101, 119, 95, 97, 112, 105, 95,
+                            101, 110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117,
+                            101, 37, 50, 67, 37, 50, 50, 114, 101, 115, 112, 111, 110, 115, 105,
+                            118, 101, 95, 119, 101, 98, 95, 103, 114, 97, 112, 104, 113, 108, 95,
+                            116, 105, 109, 101, 108, 105, 110, 101, 95, 110, 97, 118, 105, 103, 97,
+                            116, 105, 111, 110, 95, 101, 110, 97, 98, 108, 101, 100, 37, 50, 50,
+                            37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 114, 101, 115,
+                            112, 111, 110, 115, 105, 118, 101, 95, 119, 101, 98, 95, 103, 114, 97,
+                            112, 104, 113, 108, 95, 115, 107, 105, 112, 95, 117, 115, 101, 114, 95,
+                            112, 114, 111, 102, 105, 108, 101, 95, 105, 109, 97, 103, 101, 95, 101,
+                            120, 116, 101, 110, 115, 105, 111, 110, 115, 95, 101, 110, 97, 98, 108,
+                            101, 100, 37, 50, 50, 37, 51, 65, 102, 97, 108, 115, 101, 37, 50, 67,
+                            37, 50, 50, 99, 111, 109, 109, 117, 110, 105, 116, 105, 101, 115, 95,
+                            119, 101, 98, 95, 101, 110, 97, 98, 108, 101, 95, 116, 119, 101, 101,
+                            116, 95, 99, 111, 109, 109, 117, 110, 105, 116, 121, 95, 114, 101, 115,
+                            117, 108, 116, 115, 95, 102, 101, 116, 99, 104, 37, 50, 50, 37, 51, 65,
+                            116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 99, 57, 115, 95, 116, 119,
+                            101, 101, 116, 95, 97, 110, 97, 116, 111, 109, 121, 95, 109, 111, 100,
+                            101, 114, 97, 116, 111, 114, 95, 98, 97, 100, 103, 101, 95, 101, 110,
+                            97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37,
+                            50, 67, 37, 50, 50, 97, 114, 116, 105, 99, 108, 101, 115, 95, 112, 114,
+                            101, 118, 105, 101, 119, 95, 101, 110, 97, 98, 108, 101, 100, 37, 50,
+                            50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 114, 101,
+                            115, 112, 111, 110, 115, 105, 118, 101, 95, 119, 101, 98, 95, 101, 100,
+                            105, 116, 95, 116, 119, 101, 101, 116, 95, 97, 112, 105, 95, 101, 110,
+                            97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37,
+                            50, 67, 37, 50, 50, 103, 114, 97, 112, 104, 113, 108, 95, 105, 115, 95,
+                            116, 114, 97, 110, 115, 108, 97, 116, 97, 98, 108, 101, 95, 114, 119,
+                            101, 98, 95, 116, 119, 101, 101, 116, 95, 105, 115, 95, 116, 114, 97,
+                            110, 115, 108, 97, 116, 97, 98, 108, 101, 95, 101, 110, 97, 98, 108,
+                            101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37,
+                            50, 50, 118, 105, 101, 119, 95, 99, 111, 117, 110, 116, 115, 95, 101,
+                            118, 101, 114, 121, 119, 104, 101, 114, 101, 95, 97, 112, 105, 95, 101,
+                            110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101,
+                            37, 50, 67, 37, 50, 50, 108, 111, 110, 103, 102, 111, 114, 109, 95,
+                            110, 111, 116, 101, 116, 119, 101, 101, 116, 115, 95, 99, 111, 110,
+                            115, 117, 109, 112, 116, 105, 111, 110, 95, 101, 110, 97, 98, 108, 101,
+                            100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50,
+                            50, 114, 101, 115, 112, 111, 110, 115, 105, 118, 101, 95, 119, 101, 98,
+                            95, 116, 119, 105, 116, 116, 101, 114, 95, 97, 114, 116, 105, 99, 108,
+                            101, 95, 116, 119, 101, 101, 116, 95, 99, 111, 110, 115, 117, 109, 112,
+                            116, 105, 111, 110, 95, 101, 110, 97, 98, 108, 101, 100, 37, 50, 50,
+                            37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 116, 119, 101,
+                            101, 116, 95, 97, 119, 97, 114, 100, 115, 95, 119, 101, 98, 95, 116,
+                            105, 112, 112, 105, 110, 103, 95, 101, 110, 97, 98, 108, 101, 100, 37,
+                            50, 50, 37, 51, 65, 102, 97, 108, 115, 101, 37, 50, 67, 37, 50, 50, 99,
+                            114, 101, 97, 116, 111, 114, 95, 115, 117, 98, 115, 99, 114, 105, 112,
+                            116, 105, 111, 110, 115, 95, 113, 117, 111, 116, 101, 95, 116, 119,
+                            101, 101, 116, 95, 112, 114, 101, 118, 105, 101, 119, 95, 101, 110, 97,
+                            98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 102, 97, 108, 115, 101, 37,
+                            50, 67, 37, 50, 50, 102, 114, 101, 101, 100, 111, 109, 95, 111, 102,
+                            95, 115, 112, 101, 101, 99, 104, 95, 110, 111, 116, 95, 114, 101, 97,
+                            99, 104, 95, 102, 101, 116, 99, 104, 95, 101, 110, 97, 98, 108, 101,
+                            100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50,
+                            50, 115, 116, 97, 110, 100, 97, 114, 100, 105, 122, 101, 100, 95, 110,
+                            117, 100, 103, 101, 115, 95, 109, 105, 115, 105, 110, 102, 111, 37, 50,
+                            50, 37, 51, 65, 116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 116, 119,
+                            101, 101, 116, 95, 119, 105, 116, 104, 95, 118, 105, 115, 105, 98, 105,
+                            108, 105, 116, 121, 95, 114, 101, 115, 117, 108, 116, 115, 95, 112,
+                            114, 101, 102, 101, 114, 95, 103, 113, 108, 95, 108, 105, 109, 105,
+                            116, 101, 100, 95, 97, 99, 116, 105, 111, 110, 115, 95, 112, 111, 108,
+                            105, 99, 121, 95, 101, 110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51,
+                            65, 116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 114, 119, 101, 98, 95,
+                            118, 105, 100, 101, 111, 95, 116, 105, 109, 101, 115, 116, 97, 109,
+                            112, 115, 95, 101, 110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65,
+                            116, 114, 117, 101, 37, 50, 67, 37, 50, 50, 108, 111, 110, 103, 102,
+                            111, 114, 109, 95, 110, 111, 116, 101, 116, 119, 101, 101, 116, 115,
+                            95, 114, 105, 99, 104, 95, 116, 101, 120, 116, 95, 114, 101, 97, 100,
+                            95, 101, 110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114,
+                            117, 101, 37, 50, 67, 37, 50, 50, 108, 111, 110, 103, 102, 111, 114,
+                            109, 95, 110, 111, 116, 101, 116, 119, 101, 101, 116, 115, 95, 105,
+                            110, 108, 105, 110, 101, 95, 109, 101, 100, 105, 97, 95, 101, 110, 97,
+                            98, 108, 101, 100, 37, 50, 50, 37, 51, 65, 116, 114, 117, 101, 37, 50,
+                            67, 37, 50, 50, 114, 101, 115, 112, 111, 110, 115, 105, 118, 101, 95,
+                            119, 101, 98, 95, 101, 110, 104, 97, 110, 99, 101, 95, 99, 97, 114,
+                            100, 115, 95, 101, 110, 97, 98, 108, 101, 100, 37, 50, 50, 37, 51, 65,
+                            102, 97, 108, 115, 101, 37, 55, 68, 14, 85, 82, 76, 95, 80, 65, 82, 65,
+                            77, 83, 95, 71, 82, 68, 159, 37, 55, 66, 37, 50, 50, 119, 105, 116,
+                            104, 65, 114, 116, 105, 99, 108, 101, 82, 105, 99, 104, 67, 111, 110,
+                            116, 101, 110, 116, 83, 116, 97, 116, 101, 37, 50, 50, 37, 51, 65, 116,
+                            114, 117, 101, 37, 50, 67, 37, 50, 50, 119, 105, 116, 104, 65, 114,
+                            116, 105, 99, 108, 101, 80, 108, 97, 105, 110, 84, 101, 120, 116, 37,
+                            50, 50, 37, 51, 65, 102, 97, 108, 115, 101, 37, 50, 67, 37, 50, 50,
+                            119, 105, 116, 104, 71, 114, 111, 107, 65, 110, 97, 108, 121, 122, 101,
+                            37, 50, 50, 37, 51, 65, 102, 97, 108, 115, 101, 37, 50, 67, 37, 50, 50,
+                            119, 105, 116, 104, 68, 105, 115, 97, 108, 108, 111, 119, 101, 100, 82,
+                            101, 112, 108, 121, 67, 111, 110, 116, 114, 111, 108, 115, 37, 50, 50,
+                            37, 51, 65, 102, 97, 108, 115, 101, 37, 55, 68, 10, 99, 114, 101, 97,
+                            116, 101, 100, 95, 97, 116, 30, 84, 104, 117, 32, 74, 117, 110, 32, 48,
+                            54, 32, 50, 48, 58, 49, 50, 58, 50, 57, 32, 43, 48, 48, 48, 48, 32, 50,
+                            48, 50, 52, 9, 102, 117, 108, 108, 95, 116, 101, 120, 116, 251, 32, 1,
+                            66, 114, 101, 97, 107, 105, 110, 103, 32, 100, 111, 119, 110, 32, 116,
+                            104, 101, 32, 115, 117, 109, 45, 99, 104, 101, 99, 107, 32, 112, 114,
+                            111, 116, 111, 99, 111, 108, 92, 110, 92, 110, 70, 101, 119, 32, 109,
+                            111, 110, 116, 104, 115, 32, 97, 103, 111, 32, 73, 32, 100, 105, 100,
+                            32, 116, 104, 105, 115, 32, 105, 109, 112, 108, 101, 109, 101, 110,
+                            116, 97, 116, 105, 111, 110, 32, 111, 102, 32, 116, 104, 101, 32, 115,
+                            117, 109, 45, 99, 104, 101, 99, 107, 32, 112, 114, 111, 116, 111, 99,
+                            111, 108, 32, 105, 110, 32, 82, 117, 115, 116, 44, 32, 97, 110, 100,
+                            32, 119, 97, 110, 116, 101, 100, 32, 116, 111, 32, 109, 97, 107, 101,
+                            32, 97, 110, 32, 97, 114, 116, 105, 99, 108, 101, 32, 97, 98, 111, 117,
+                            116, 32, 105, 116, 33, 92, 110, 92, 110, 84, 111, 100, 97, 121, 32,
+                            105, 115, 32, 116, 104, 101, 32, 100, 97, 121, 44, 32, 73, 32, 102,
+                            105, 110, 97, 108, 108, 121, 32, 116, 111, 111, 107, 32, 116, 105, 109,
+                            101, 32, 116, 111, 32, 119, 114, 105, 116, 101, 32, 97, 110, 32, 105,
+                            110, 116, 114, 111, 100, 117, 99, 116, 105, 111, 110, 32, 116, 111, 32,
+                            116, 104, 101, 32, 115, 117, 109, 45, 99, 104, 101, 99, 107, 32, 112,
+                            114, 111, 116, 111, 99, 111, 108, 33, 32, 92, 117, 68, 56, 51, 69, 92,
+                            117, 68, 69, 69, 49, 92, 110, 92, 110, 104, 116, 116, 112, 115, 58, 47,
+                            47, 116, 46, 99, 111, 47, 72, 108, 117, 108, 55, 107, 87, 99, 67, 85,
+                            11, 115, 99, 114, 101, 101, 110, 95, 110, 97, 109, 101, 10, 77, 97,
+                            116, 116, 101, 111, 95, 77, 101, 114
+                        ]
+                        .to_vec(),
+                        success: true,
+                        program_outputs: [].to_vec()
+                    }]
+                );
+            }
+            Err(e) => panic!("Reclaim verification failed: {:?}", e),
         }
     }
 }
